@@ -30,7 +30,7 @@ from torch._dispatch.python import enable_python_dispatcher
 from torch._guards import detect_fake_mode
 
 import magi_compiler.utils.envs as envs
-from magi_compiler.config import CompileConfig, CompileMode, CudaGraphMode, cache_dump_path, inductor_compile_config_hash
+from magi_compiler.config import CompileConfig, CompileMode, CudaGraphMode, inductor_compile_config_hash, magi_cache_dump_path
 from magi_compiler.magi_depyf.timeline import observe_lifecycle, observe_lifecycle_context
 from magi_compiler.offload.offload_warpper import OffloadWrapper
 from magi_compiler.passes import CustomJointGraphPartitionFn, FullGraphPassManager, PostGradPassManager, pass_context
@@ -104,23 +104,23 @@ class CompilerManager:
             with pass_context(runtime_shape, graph_index):
                 yield
 
-    def initialize_cache(self, cache_dir: Path, prefix: str = ""):
+    def initialize_cache(self, cache_dir: Path):
         """
         Initialize the cache directory for the compiler.
 
         The organization of the cache directory is as follows:
-        cache_dir=/path/to/torch_compile_cache/rank_i_j/hash_str/prefix/
+        cache_dir=/path/to/magi_cache/model_{idx}[_{tag}]_rank_{rank}/hash_str/[prefix/]
         inside cache_dir, there will be:
-        - magi_compile_cache.py
+        - subgraph_indices.py
         - computation_graph.py
 
         for multiple prefixes, they can share the same base cache dir of
-        /path/to/torch_compile_cache/rank_i_j/hash_str/ to store some
+        /path/to/magi_cache/model_{idx}[_{tag}]_rank_{rank}/hash_str/ to store some
         common compilation artifacts.
         """
 
         self.cache_dir: Path = cache_dir
-        self.cache_file_path: Path = cache_dir / "magi_compile_cache.py"
+        self.cache_file_path: Path = cache_dir / "subgraph_indices.py"
 
         if self.disable_cache:
             magi_logger.info("MagiCompiler's cache is disabled.")
@@ -139,7 +139,7 @@ class CompilerManager:
                     cache_handle = CacheHandle(*handle)
                     self.cache[cache_entry] = cache_handle
 
-        self.compiler.initialize_cache(cache_dir=self.cache_dir, prefix=prefix)
+        self.compiler.initialize_cache(cache_dir=self.cache_dir)
 
     def save_to_file(self):
         if self.disable_cache:
@@ -482,13 +482,12 @@ class MagiBackend:
             ]
         )
 
-        # Path: .../model_{idx}_{model_tag}_rank_{rank}/{hash}/{model_tag}/
-        self.local_cache_dir: Path = (
-            cache_dump_path(self.compile_config.cache_root_dir, self.model_idx, self.model_tag) / hash_key / self.model_tag
+        # Path: .../model_{idx}_{model_tag}_rank_{rank}/{hash}/
+        self.local_magi_cache_path: Path = (
+            magi_cache_dump_path(self.compile_config.cache_root_dir, self.model_idx, self.model_tag) / hash_key
         )
-        self.local_cache_dir.mkdir(parents=True, exist_ok=True)
-
-        self.compiler_manager.initialize_cache(self.local_cache_dir, self.model_tag)
+        self.local_magi_cache_path.mkdir(parents=True, exist_ok=True)
+        self.compiler_manager.initialize_cache(self.local_magi_cache_path)
 
     @observe_lifecycle("graph_split")
     def _split_graph(self, graph: fx.GraphModule) -> tuple[fx.GraphModule, list[SplitItem]]:

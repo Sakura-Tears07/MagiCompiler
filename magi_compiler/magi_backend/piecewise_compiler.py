@@ -19,7 +19,6 @@ from pathlib import Path
 from typing import Any
 
 import torch
-import torch._inductor.compile_fx
 import torch.fx as fx
 
 from magi_compiler.magi_depyf.timeline import observe_lifecycle
@@ -64,7 +63,7 @@ class CompilerInterface:
     name: str
 
     @abstractmethod
-    def initialize_cache(self, cache_dir: Path, prefix: str = ""):
+    def initialize_cache(self, cache_dir: Path):
         """
         when the MagiCompiler process uses `cache_dir` as the cache directory,
         the compiler should initialize itself with the cache directory,
@@ -160,7 +159,7 @@ class InductorStandaloneAdaptor(CompilerInterface):
         factors: list[Any] = [CacheBase.get_system(), torch_key()]
         return compute_hash(factors)
 
-    def initialize_cache(self, cache_dir: Path, prefix: str = ""):
+    def initialize_cache(self, cache_dir: Path):
         self.cache_dir: Path = cache_dir
 
     @observe_lifecycle("compiler_compile")
